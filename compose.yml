@@ -1,1 +1,69 @@
-#TODO
+# Proxecto P2: Clúster de Cassandra para o parque eólico de Monte Brañas
+name: parque-eolico
+
+x-cassandra: &cassandra
+  image: cassandra:5.0.8
+  environment:
+    CASSANDRA_CLUSTER_NAME: ParqueEolico
+    CASSANDRA_SEEDS: cass1
+    CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+    CASSANDRA_DC: dc1
+    CASSANDRA_RACK: rack1
+    CASSANDRA_NUM_TOKENS: 16
+    MAX_HEAP_SIZE: 1G
+    HEAP_NEWSIZE: 200M
+  networks: [parque-eolico]
+  healthcheck:
+    test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' > /dev/null 2>&1"]
+    interval: 15s
+    timeout: 10s
+    retries: 20
+    start_period: 60s
+
+services:
+  cass1:
+    <<: *cassandra
+    hostname: cass1
+    volumes:
+      - cass1_datos:/var/lib/cassandra
+      - ./cql:/cql:ro
+
+  cass2:
+    <<: *cassandra
+    hostname: cass2
+    volumes:
+      - cass2_datos:/var/lib/cassandra
+      - ./cql:/cql:ro
+    depends_on:
+      cass1:
+        condition: service_healthy
+
+  cass3:
+    <<: *cassandra
+    hostname: cass3
+    volumes:
+      - cass3_datos:/var/lib/cassandra
+      - ./cql:/cql:ro
+    depends_on:
+      cass2:
+        condition: service_healthy
+
+  app:
+    image: python:3.11-slim
+    profiles: ["app"]
+    working_dir: /app
+    volumes:
+      - ./src:/app
+    networks: [parque-eolico]
+    command: bash -c "pip install --no-cache-dir -r requirements.txt && tail -f /dev/null"
+    depends_on:
+      cass1:
+        condition: service_healthy
+
+volumes:
+  cass1_datos:
+  cass2_datos:
+  cass3_datos:
+
+networks:
+  parque-eolico:
